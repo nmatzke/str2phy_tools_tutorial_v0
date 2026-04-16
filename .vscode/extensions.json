@@ -1,0 +1,14 @@
+{
+  "recommendations": [
+    "quarto.quarto",
+    "REditorSupport.r",
+    "RDebugger.r-debugger",
+    "mads-hartmann.bash-ide-vscode",
+    "timonwong.shellcheck",
+    "mechatroner.rainbow-csv",
+    "GrapeCity.gc-excelviewer",
+    "christian-kohler.path-intellisense",
+    "oderwat.indent-rainbow",
+    "eamodio.gitlens"
+  ]
+}

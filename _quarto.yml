@@ -1,0 +1,17 @@
+project:
+  type: default
+
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-depth: 3
+    toc-title: "Pipeline Steps"
+    code-fold: false
+    theme: cosmo
+    highlight-style: github
+
+execute:
+  echo: true
+  warning: false
+  message: false
