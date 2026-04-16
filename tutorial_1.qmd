@@ -71,19 +71,24 @@ sure everything is in order before we start.
 ## Check: inspect the genome file
 
 ```{bash}
+# First, change directory (this assumes you have cloned the GitHub repository, and have a shortcut
+# so that ~/GitHub/ gets to the GitHub folder on your system)
+cd ~/GitHub/str2phy_tools_tutorial_v0
+
 #| label: check-genome
 
-echo "=== Genome file (first 5 lines) ==="
+echo "\n\n=== Genome file (first 5 lines) ==="
 head -5 01_input/ecoli_k12.gbk
 
 echo ""
-echo "=== Total lines in genome file ==="
+echo "\n\n=== Total lines in genome file ==="
 wc -l 01_input/ecoli_k12.gbk
 ```
 
 ## Check: inspect the MotA query sequence
 
 ```{r}
+setwd("~/GitHub/str2phy_tools_tutorial_v0")
 #| label: check-motA-fasta
 
 motA <- readAAStringSet("01_input/motA.faa")
@@ -94,6 +99,8 @@ cat("\nSequence length:", width(motA), "amino acids\n")
 ## Check: inspect the MotA AlphaFold structure
 
 ```{bash}
+cd ~/GitHub/str2phy_tools_tutorial_v0
+
 #| label: check-motA-pdb
 
 echo "=== PDB file header ==="

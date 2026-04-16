@@ -37,14 +37,21 @@ db=nuccore&id=U00096.3&rettype=gbwithparts&retmode=text" \
   -o 01_input/ecoli_k12.gbk
 echo "    Done: 01_input/ecoli_k12.gbk"
  
-echo "=== Downloading MotA query sequence (UniProt P0AFN2) ==="
-curl -s "https://rest.uniprot.org/uniprotkb/P0AFN2.fasta" \
+echo "=== Downloading MotA query sequence (UniProt P09348) ==="
+curl -s "https://rest.uniprot.org/uniprotkb/P09348.fasta" \
   -o 01_input/motA.faa
 echo "    Done: 01_input/motA.faa"
  
-echo "=== Downloading MotA AlphaFold structure (AF-P0AFN2-F1) ==="
-curl -s "https://alphafold.ebi.ac.uk/files/AF-P0AFN2-F1-model_v4.pdb" \
-  -o 01_input/motA.pdb
+echo "=== Downloading MotA AlphaFold structure (AF-P09348-F1) ==="
+# Install with "uv":
+# wget -qO- https://astral.sh/uv/install.sh | sh
+# uv tool install AlphaFoldFetch
+# from: https://github.com/mansanlab/alphafoldfetch 
+affetch P09348 -o 01_input
+gunzip AF-P09348-F1-model_v6.pdb.gz
+gunzip AF-P09348-F1-model_v6.cif.gz
+cp AF-P09348-F1-model_v6.pdb motA.pdb
+cp AF-P09348-F1-model_v6.cif motA.cif
 echo "    Done: 01_input/motA.pdb"
  
 echo "=== Writing .vscode/extensions.json ==="
@@ -118,7 +125,7 @@ A step-by-step tutorial pipeline moving from bacterial genomes to
 phylogenetic trees, using sequence and structure-based methods.
  
 **Example data:** *E. coli* K12 MG1655 genome (U00096.3), MotA query
-sequence and structure (UniProt P0AFN2 / AlphaFold AF-P0AFN2-F1).
+sequence and structure (UniProt P09348 / AlphaFold AF-P09348-F1).
  
 ## Prerequisites
  
