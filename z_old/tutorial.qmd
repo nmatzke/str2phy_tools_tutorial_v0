@@ -1,0 +1,459 @@
+---
+title: "Structural Phylogenomics Pipeline"
+subtitle: "From Bacterial Genomes to Phylogenetic Trees"
+author: "Your Name"
+date: today
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-depth: 3
+    toc-title: "Pipeline Steps"
+    code-fold: false
+    theme: cosmo
+    highlight-style: github
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Introduction
+
+This tutorial walks through a structural phylogenomics pipeline applied to a
+sample of bacterial genomes. We will search for homologs using sequence and
+structure-based methods, retrieve AlphaFold structural predictions, construct
+multiple sequence alignments incorporating both amino acid (AA) and structural
+(3Di) information, infer phylogenetic trees, and assess tree topology and
+distance.
+
+**Prerequisites:** Before starting, ensure the following tools are installed
+and available on your `PATH`:
+
+- [HMMer](http://hmmer.org/) (`hmmbuild`, `hmmsearch`)
+- [Foldseek](https://github.com/steinegger-lab/foldseek)
+- [MAFFT](https://mafft.cbrc.jp/alignment/software/)
+- [FAMSA](https://github.com/refresh-bio/FAMSA) (with 3Di support)
+- [Foldmason](https://github.com/steinegger-lab/foldmason)
+- [IQ-TREE 2](http://www.iqtree.org/)
+- [FigTree](http://tree.bio.ed.ac.uk/software/figtree/) (for interactive tree viewing)
+
+The following R packages are also required:
+
+```{r}
+#| label: load-packages
+
+# Install any missing packages with: install.packages("pak"); pak::pkg_install(...)
+library(ape)        # tree reading and manipulation
+library(ggtree)     # tree visualization
+library(ggplot2)    # general plotting
+library(Biostrings) # FASTA handling
+library(TreeDist)   # tree distance statistics
+library(tidyverse)  # data wrangling
+```
+
+---
+
+# Step 1: Define Your Input Data
+
+Set your working paths here. All subsequent steps reference these variables,
+so you only need to update this block if your file locations change.
+
+```{bash}
+#| label: setup-dirs
+
+# Create output directories if they don't exist
+mkdir -p results/hmmer
+mkdir -p results/foldseek
+mkdir -p results/fasta
+mkdir -p results/alphafold
+mkdir -p results/3di
+mkdir -p results/alignments
+mkdir -p results/trees
+
+echo "Directory structure ready."
+ls results/
+```
+
+---
+
+# Step 2: Homolog Search
+
+## 2a: Profile-based search with HMMer
+
+Use `hmmsearch` to search your bacterial genome protein sequences against an
+HMM profile. Replace `my_profile.hmm` and `genome_proteins.faa` with your
+actual file names.
+
+```{bash}
+#| label: hmmsearch
+
+hmmsearch \
+  --tblout results/hmmer/hits.tbl \
+  --cpu 4 \
+  -E 1e-5 \
+  data/profiles/my_profile.hmm \
+  data/raw/genome_proteins.faa
+
+echo "HMMer search complete. Top hits:"
+head -20 results/hmmer/hits.tbl | grep -v "^#"
+```
+
+## 2b: Structure-based search with Foldseek
+
+Use `foldseek easy-search` to search with a query structure against a database
+of bacterial proteome structures.
+
+```{bash}
+#| label: foldseek-search
+
+foldseek easy-search \
+  data/query_structures/ \
+  data/foldseek_db/bacterial_db \
+  results/foldseek/hits.tsv \
+  results/foldseek/tmp \
+  --exhaustive-search \
+  --format-output "query,target,evalue,bits,lddt,prob" \
+  -e 1e-5
+
+echo "Foldseek search complete. Top hits:"
+head -20 results/foldseek/hits.tsv
+```
+
+---
+
+# Step 3: Extract Hits to FASTA
+
+Parse the HMMer and/or Foldseek output to extract hit sequences into a FASTA
+file. Here we use R for flexible parsing.
+
+```{r}
+#| label: extract-hits
+
+library(Biostrings)
+
+# --- Parse HMMer hits table ---
+hmmer_hits <- read.table(
+  "results/hmmer/hits.tbl",
+  comment.char = "#",
+  header = FALSE
+) |>
+  select(target = V1, evalue = V5) |>
+  filter(as.numeric(evalue) < 1e-5)
+
+cat("HMMer hits passing threshold:", nrow(hmmer_hits), "\n")
+print(head(hmmer_hits))
+
+# --- Load genome proteins and extract hits ---
+all_seqs <- readAAStringSet("data/raw/genome_proteins.faa")
+
+# Match sequence names to hit IDs
+hit_names <- hmmer_hits$target
+hit_seqs  <- all_seqs[names(all_seqs) %in% hit_names]
+
+# Write hits to FASTA
+writeXStringSet(hit_seqs, "results/fasta/hits.faa")
+cat("\nWrote", length(hit_seqs), "sequences to results/fasta/hits.faa\n")
+```
+
+---
+
+# Step 4: Retrieve AlphaFold Structures
+
+For each hit, download its AlphaFold predicted structure from the EBI
+AlphaFold database. The accession is assumed to be a UniProt ID.
+
+```{bash}
+#| label: alphafold-download
+
+# Extract UniProt IDs from the FASTA headers (adjust awk pattern to your headers)
+grep ">" results/fasta/hits.faa | awk '{print $1}' | sed 's/>//' \
+  > results/alphafold/uniprot_ids.txt
+
+echo "Downloading AlphaFold structures for:"
+cat results/alphafold/uniprot_ids.txt
+
+# Download each structure
+while read accession; do
+  url="https://alphafold.ebi.ac.uk/files/AF-${accession}-F1-model_v4.pdb"
+  wget -q -O "results/alphafold/${accession}.pdb" "$url" \
+    && echo "  Downloaded: $accession" \
+    || echo "  Not found:  $accession"
+done < results/alphafold/uniprot_ids.txt
+```
+
+---
+
+# Step 5: Convert Structures to 3Di with Foldseek
+
+Foldseek encodes protein structures as sequences of structural "letters" (3Di
+alphabet). We extract these using `foldseek structureto3didescriptor`.
+
+```{bash}
+#| label: struct-to-3di
+
+foldseek createdb results/alphafold/ results/3di/af_db
+foldseek convert2fasta results/3di/af_db results/3di/hits_3di.fasta --db-load-mode 3
+
+echo "3Di FASTA created:"
+grep -c ">" results/3di/hits_3di.fasta
+```
+
+---
+
+# Step 6: Multiple Sequence Alignment
+
+We generate alignments using three methods: standard AA alignment (MAFFT),
+3Di-aware alignment (FAMSA with 3Di), and structure-guided alignment
+(Foldmason). These can be compared in Step 7.
+
+## 6a: MAFFT (amino acid)
+
+```{bash}
+#| label: mafft
+
+mafft --auto --thread 4 results/fasta/hits.faa \
+  > results/alignments/hits_mafft_aa.fasta
+
+echo "MAFFT alignment complete."
+grep -c ">" results/alignments/hits_mafft_aa.fasta
+```
+
+## 6b: FAMSA with 3Di
+
+```{bash}
+#| label: famsa-3di
+
+famsa \
+  -t 4 \
+  results/3di/hits_3di.fasta \
+  results/alignments/hits_famsa_3di.fasta
+
+echo "FAMSA 3Di alignment complete."
+grep -c ">" results/alignments/hits_famsa_3di.fasta
+```
+
+## 6c: Foldmason (structure-guided)
+
+```{bash}
+#| label: foldmason
+
+foldmason easy-msa \
+  results/alphafold/ \
+  results/alignments/hits_foldmason \
+  results/alignments/foldmason_tmp \
+  --report-mode 1
+
+echo "Foldmason alignment complete."
+```
+
+---
+
+# Step 7: Assess Alignments
+
+## 7a: Summary statistics in R
+
+```{r}
+#| label: alignment-stats
+
+library(Biostrings)
+library(tidyverse)
+
+# Read alignments
+alns <- list(
+  mafft_aa  = readAAStringSet("results/alignments/hits_mafft_aa.fasta"),
+  famsa_3di = readAAStringSet("results/alignments/hits_famsa_3di.fasta")
+)
+
+# Summarize each alignment
+aln_summary <- map_dfr(names(alns), function(nm) {
+  aln <- alns[[nm]]
+  tibble(
+    method    = nm,
+    n_seqs    = length(aln),
+    aln_width = unique(width(aln)),
+    pct_gap   = round(
+      mean(letterFrequency(aln, "-") / width(aln)) * 100, 2
+    )
+  )
+})
+
+print(aln_summary)
+```
+
+## 7b: Alignment visualization
+
+```{r}
+#| label: alignment-plot
+#| fig-width: 10
+#| fig-height: 4
+
+# Simple gap-density plot across alignment columns for MAFFT alignment
+aln_mat <- as.matrix(alns$mafft_aa)
+gap_freq <- colMeans(aln_mat == "-")
+
+tibble(position = seq_along(gap_freq), gap_freq = gap_freq) |>
+  ggplot(aes(x = position, y = gap_freq)) +
+  geom_area(fill = "steelblue", alpha = 0.7) +
+  labs(
+    title = "Gap frequency across MAFFT AA alignment",
+    x     = "Alignment position",
+    y     = "Proportion of gaps"
+  ) +
+  theme_minimal()
+```
+
+---
+
+# Step 8: Phylogenetic Inference with IQ-TREE 2
+
+We run three tree searches: AA-only, 3Di-only, and a partitioned AA+3Di
+analysis.
+
+## 8a: AA-only tree
+
+```{bash}
+#| label: iqtree-aa
+
+iqtree2 \
+  -s results/alignments/hits_mafft_aa.fasta \
+  --prefix results/trees/tree_aa \
+  -m TEST \
+  -B 1000 \
+  -T AUTO \
+  --redo
+
+echo "IQ-TREE AA tree complete."
+```
+
+## 8b: 3Di-only tree
+
+```{bash}
+#| label: iqtree-3di
+
+iqtree2 \
+  -s results/alignments/hits_famsa_3di.fasta \
+  --prefix results/trees/tree_3di \
+  -m TEST \
+  -B 1000 \
+  -T AUTO \
+  --redo
+
+echo "IQ-TREE 3Di tree complete."
+```
+
+## 8c: Partitioned AA + 3Di tree
+
+```{bash}
+#| label: iqtree-partitioned
+
+# Create partition file
+cat > results/trees/partition.nex << 'EOF'
+#nexus
+begin sets;
+  charset AA  = results/alignments/hits_mafft_aa.fasta: *;
+  charset 3Di = results/alignments/hits_famsa_3di.fasta: *;
+end;
+EOF
+
+iqtree2 \
+  -p results/trees/partition.nex \
+  --prefix results/trees/tree_partitioned \
+  -B 1000 \
+  -T AUTO \
+  --redo
+
+echo "IQ-TREE partitioned tree complete."
+```
+
+---
+
+# Step 9: Tree Visualization in R
+
+```{r}
+#| label: tree-viz
+#| fig-width: 10
+#| fig-height: 8
+
+library(ape)
+library(ggtree)
+
+# Read trees
+tree_aa   <- read.tree("results/trees/tree_aa.treefile")
+tree_3di  <- read.tree("results/trees/tree_3di.treefile")
+
+# Plot AA tree with bootstrap support
+p_aa <- ggtree(tree_aa) +
+  geom_tiplab(size = 3) +
+  geom_nodelab(aes(label = label), size = 2.5, color = "firebrick") +
+  labs(title = "AA tree (MAFFT + IQ-TREE)") +
+  theme_tree2()
+
+print(p_aa)
+
+# Plot 3Di tree
+p_3di <- ggtree(tree_3di) +
+  geom_tiplab(size = 3) +
+  geom_nodelab(aes(label = label), size = 2.5, color = "steelblue") +
+  labs(title = "3Di tree (FAMSA + IQ-TREE)") +
+  theme_tree2()
+
+print(p_3di)
+```
+
+> **Note:** For interactive exploration, open the `.treefile` outputs in
+> FigTree, which allows you to re-root, colour, and annotate trees manually.
+
+---
+
+# Step 10: Tree Distance Statistics
+
+When two proteins are hypothesized to share vertical evolutionary history, we
+can quantify how similar their trees are using tree distance metrics.
+
+```{r}
+#| label: tree-distances
+
+library(TreeDist)
+
+# Make sure tip labels match between trees before comparing
+# (subset to shared tips if needed)
+shared_tips <- intersect(tree_aa$tip.label, tree_3di$tip.label)
+tree_aa_sub  <- keep.tip(tree_aa,  shared_tips)
+tree_3di_sub <- keep.tip(tree_3di, shared_tips)
+
+# Calculate several distance metrics
+distances <- tibble(
+  metric = c(
+    "Robinson-Foulds",
+    "Clustering Info Distance",
+    "Matching Split Distance",
+    "Nye Similarity"
+  ),
+  value = c(
+    RobinsonFoulds(tree_aa_sub, tree_3di_sub),
+    ClusteringInfoDistance(tree_aa_sub, tree_3di_sub),
+    MatchingSplitDistance(tree_aa_sub, tree_3di_sub),
+    NyeSimilarity(tree_aa_sub, tree_3di_sub)
+  )
+)
+
+print(distances)
+```
+
+Interpretation guide:
+
+- **Robinson-Foulds distance**: counts differing bipartitions; 0 = identical topologies.
+- **Clustering Info Distance**: information-theoretic; lower = more similar.
+- **Matching Split Distance**: accounts for partial agreement between splits.
+- **Nye Similarity**: 0–1 similarity score; higher = more congruent trees.
+
+---
+
+# Session Info
+
+```{r}
+#| label: session-info
+
+sessionInfo()
+```

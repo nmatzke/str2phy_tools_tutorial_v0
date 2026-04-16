@@ -1,6 +1,6 @@
 project:
   type: default
-
+ 
 format:
   html:
     self-contained: true
@@ -10,7 +10,7 @@ format:
     code-fold: false
     theme: cosmo
     highlight-style: github
-
+ 
 execute:
   echo: true
   warning: false

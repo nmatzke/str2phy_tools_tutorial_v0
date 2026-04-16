@@ -1,0 +1,738 @@
+---
+title: "Structural Phylogenomics Pipeline Tutorial"
+subtitle: "From Bacterial Genomes to Phylogenetic Trees"
+author: "Your Name"
+date: today
+format:
+  html:
+    self-contained: true
+    toc: true
+    toc-depth: 3
+    toc-title: "Pipeline Steps"
+    code-fold: false
+    theme: cosmo
+    highlight-style: github
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# Introduction
+
+This tutorial walks through a structural phylogenomics pipeline step by step,
+using the *E. coli* K12 genome (GenBank: U00096.3) as our example dataset and
+**MotA** (flagellar motor protein, UniProt: P0AFN2) as our query sequence and
+structure.
+
+Each section covers one stage of the pipeline. Within each section you will:
+
+1. **Check** that the required tool is installed and working
+2. **Run** a simple example using the tutorial data
+
+Work through the sections in order. All input data are pre-staged in the
+numbered folders alongside this file.
+
+---
+
+# R packages
+
+Load all required R packages here. If any are missing, install them with
+`install.packages("pak"); pak::pkg_install(c(...))`.
+
+```{r}
+#| label: load-packages
+
+library(Biostrings)  # FASTA handling
+library(ape)         # tree reading and manipulation
+library(ggtree)      # tree visualization
+library(ggplot2)     # general plotting
+library(TreeDist)    # tree distance statistics
+library(tidyverse)   # data wrangling
+```
+
+---
+
+# Step 01 — Input Data
+
+**Folder:** `01_input/`
+
+This step has no external tool dependency. We inspect the input data to make
+sure everything is in order before we start.
+
+## Input files
+
+| File | Description |
+|---|---|
+| `01_input/ecoli_k12.gbk` | *E. coli* K12 MG1655 genome (GenBank format, U00096.3) |
+| `01_input/motA.faa` | MotA query sequence (FASTA amino acid, P0AFN2) |
+| `01_input/motA.pdb` | MotA AlphaFold structure (PDB format, AF-P0AFN2-F1) |
+
+## Check: inspect the genome file
+
+```{bash}
+#| label: check-genome
+
+echo "=== Genome file (first 5 lines) ==="
+head -5 01_input/ecoli_k12.gbk
+
+echo ""
+echo "=== Total lines in genome file ==="
+wc -l 01_input/ecoli_k12.gbk
+```
+
+## Check: inspect the MotA query sequence
+
+```{r}
+#| label: check-motA-fasta
+
+motA <- readAAStringSet("01_input/motA.faa")
+motA
+cat("\nSequence length:", width(motA), "amino acids\n")
+```
+
+## Check: inspect the MotA AlphaFold structure
+
+```{bash}
+#| label: check-motA-pdb
+
+echo "=== PDB file header ==="
+grep "^HEADER\|^TITLE\|^SEQRES" 01_input/motA.pdb | head -10
+
+echo ""
+echo "=== Number of ATOM records ==="
+grep -c "^ATOM" 01_input/motA.pdb
+```
+
+---
+
+# Step 02 — Extract Proteins from Genome
+
+**Folder:** `02_genome_proteins/`  
+**Tool:** standard Unix tools (`grep`, `awk`) + R (Biostrings)
+
+Before searching for homologs, we need to extract all protein sequences from
+the GenBank genome file into a FASTA file.
+
+## Check: confirm R and Biostrings are working
+
+```{r}
+#| label: check-biostrings
+
+packageVersion("Biostrings")
+```
+
+## Run: extract proteins from GenBank file
+
+We use the `readGenBank()` approach via the `genbankr` package, or
+alternatively parse the GenBank file for CDS translation fields using
+Biostrings. Here we use a shell approach with `any2fasta` or direct GenBank
+parsing — confirm which tool you have available:
+
+```{bash}
+#| label: check-any2fasta
+
+any2fasta --version 2>&1 || echo "any2fasta not found — see note below"
+```
+
+> **Note:** If `any2fasta` is not installed, install it with:
+> `conda install -c bioconda any2fasta` or `brew install any2fasta`
+
+```{bash}
+#| label: extract-proteins
+
+any2fasta 01_input/ecoli_k12.gbk > 02_genome_proteins/ecoli_k12_proteins.faa
+
+echo "=== Extraction complete. Sequence count: ==="
+grep -c ">" 02_genome_proteins/ecoli_k12_proteins.faa
+
+echo ""
+echo "=== First 3 sequences: ==="
+grep ">" 02_genome_proteins/ecoli_k12_proteins.faa | head -3
+```
+
+## Check: verify MotA is present in the extracted proteins
+
+```{r}
+#| label: verify-motA-present
+
+proteins <- readAAStringSet("02_genome_proteins/ecoli_k12_proteins.faa")
+cat("Total proteins extracted:", length(proteins), "\n")
+
+# Search for MotA by name in headers
+mota_hit <- proteins[grepl("motA|MotA|P0AFN2", names(proteins))]
+cat("MotA entries found:", length(mota_hit), "\n")
+print(mota_hit)
+```
+
+---
+
+# Step 03 — Homolog Search with HMMer
+
+**Folder:** `03_hmmer/`  
+**Tool:** [HMMer](http://hmmer.org/) (`hmmbuild`, `hmmsearch`)
+
+HMMer searches for sequence homologs using profile hidden Markov models
+(HMMs). We will build a profile from our single MotA query, then search it
+against the *E. coli* K12 proteome as a test.
+
+## Check: confirm HMMer is installed
+
+```{bash}
+#| label: check-hmmer
+
+hmmbuild -h 2>&1 | head -3
+echo "---"
+hmmsearch -h 2>&1 | head -3
+```
+
+## Run: build an HMM profile from MotA
+
+A single-sequence "profile" is the simplest case. In a real run you would
+build from a curated multiple sequence alignment.
+
+```{bash}
+#| label: hmmbuild
+
+hmmbuild \
+  03_hmmer/motA.hmm \
+  01_input/motA.faa
+
+echo "=== HMM profile created ==="
+grep "^NAME\|^LENG\|^ALPH" 03_hmmer/motA.hmm
+```
+
+## Run: search the profile against the K12 proteome
+
+```{bash}
+#| label: hmmsearch
+
+hmmsearch \
+  --tblout 03_hmmer/hits.tbl \
+  --cpu 4 \
+  -E 1e-5 \
+  03_hmmer/motA.hmm \
+  02_genome_proteins/ecoli_k12_proteins.faa
+
+echo "=== Hits (excluding comment lines) ==="
+grep -v "^#" 03_hmmer/hits.tbl | head -10
+```
+
+## Inspect HMMer results in R
+
+```{r}
+#| label: hmmer-results
+
+hmmer_hits <- read.table(
+  "03_hmmer/hits.tbl",
+  comment.char = "#",
+  header        = FALSE,
+  fill          = TRUE
+) |>
+  select(target = V1, evalue = V5, score = V6) |>
+  mutate(evalue = as.numeric(evalue), score = as.numeric(score)) |>
+  arrange(evalue)
+
+cat("Total hits:", nrow(hmmer_hits), "\n\n")
+print(hmmer_hits)
+```
+
+---
+
+# Step 04 — Homolog Search with Foldseek
+
+**Folder:** `04_foldseek/`  
+**Tool:** [Foldseek](https://github.com/steinegger-lab/foldseek)
+
+Foldseek searches for structural homologs by comparing protein structures
+directly. We search the MotA AlphaFold structure against a small local
+database built from the *E. coli* K12 AlphaFold structures.
+
+## Check: confirm Foldseek is installed
+
+```{bash}
+#| label: check-foldseek
+
+foldseek version
+```
+
+## Run: build a Foldseek database from the query structure
+
+```{bash}
+#| label: foldseek-createdb
+
+# Create a small database from the query structure itself (as a self-search test)
+mkdir -p 04_foldseek/query_db
+foldseek createdb 01_input/motA.pdb 04_foldseek/query_db/motA_db
+
+echo "=== Query database created ==="
+ls 04_foldseek/query_db/
+```
+
+## Run: search MotA structure against the query database (self-search test)
+
+In the full pipeline you would search against a database of all *E. coli*
+AlphaFold structures. Here we run a self-search to confirm Foldseek is
+working — MotA should hit itself with a perfect score.
+
+```{bash}
+#| label: foldseek-search
+
+foldseek easy-search \
+  01_input/motA.pdb \
+  04_foldseek/query_db/motA_db \
+  04_foldseek/hits.tsv \
+  04_foldseek/tmp \
+  --format-output "query,target,evalue,bits,lddt,prob" \
+  -e 1
+
+echo "=== Foldseek hits ==="
+cat 04_foldseek/hits.tsv
+```
+
+---
+
+# Step 05 — Extract Hits to FASTA
+
+**Folder:** `05_hit_fasta/`  
+**Tool:** R (Biostrings)
+
+We combine the HMMer and Foldseek hit lists and extract the corresponding
+sequences from the proteome FASTA file.
+
+## Run: extract hit sequences
+
+```{r}
+#| label: extract-hits
+
+library(Biostrings)
+
+# Load all proteins
+proteins <- readAAStringSet("02_genome_proteins/ecoli_k12_proteins.faa")
+
+# Collect hit IDs from HMMer (already loaded above)
+hit_ids <- hmmer_hits$target
+
+# Match against protein headers
+# (headers may contain the ID as part of a longer string)
+matched <- proteins[sapply(names(proteins), function(nm) {
+  any(sapply(hit_ids, function(id) grepl(id, nm, fixed = TRUE)))
+})]
+
+# Always include the query itself
+query <- readAAStringSet("01_input/motA.faa")
+hits_with_query <- c(query, matched)
+
+cat("Query sequence:      1\n")
+cat("HMMer hits matched:", length(matched), "\n")
+cat("Total in output:   ", length(hits_with_query), "\n\n")
+
+writeXStringSet(hits_with_query, "05_hit_fasta/hits.faa")
+cat("Written to 05_hit_fasta/hits.faa\n")
+```
+
+## Check: inspect the output FASTA
+
+```{bash}
+#| label: check-hit-fasta
+
+echo "=== Sequences in hits.faa ==="
+grep ">" 05_hit_fasta/hits.faa
+
+echo ""
+echo "=== First sequence ==="
+head -4 05_hit_fasta/hits.faa
+```
+
+---
+
+# Step 06 — Convert Structures to 3Di with Foldseek
+
+**Folder:** `06_3di/`  
+**Tool:** Foldseek (`createdb`, `convert2fasta`)
+
+Foldseek encodes protein structures as sequences of structural "letters" using
+the 3Di alphabet — one character per residue. This lets us align structures
+as if they were sequences.
+
+## Check: foldseek is available (already checked in Step 04)
+
+```{bash}
+#| label: check-foldseek-2
+
+foldseek version
+```
+
+## Run: convert MotA structure to 3Di sequence
+
+```{bash}
+#| label: struct-to-3di
+
+mkdir -p 06_3di/db
+
+# Create a Foldseek database from the AlphaFold structure
+foldseek createdb 01_input/motA.pdb 06_3di/db/motA_db
+
+# Convert to FASTA with 3Di characters
+foldseek convert2fasta 06_3di/db/motA_db 06_3di/motA_3di.fasta
+
+echo "=== 3Di sequence for MotA ==="
+cat 06_3di/motA_3di.fasta
+```
+
+## Compare AA vs 3Di sequences in R
+
+```{r}
+#| label: compare-aa-3di
+
+aa_seq <- readAAStringSet("01_input/motA.faa")
+di_seq <- readAAStringSet("06_3di/motA_3di.fasta")
+
+cat("AA  length:", width(aa_seq), "\n")
+cat("3Di length:", width(di_seq), "\n\n")
+
+cat("AA  (first 60):", substr(as.character(aa_seq[[1]]),  1, 60), "\n")
+cat("3Di (first 60):", substr(as.character(di_seq[[1]]),  1, 60), "\n")
+```
+
+---
+
+# Step 07 — Multiple Sequence Alignment
+
+**Folder:** `07_alignments/`  
+**Tools:** [MAFFT](https://mafft.cbrc.jp/), [FAMSA](https://github.com/refresh-bio/FAMSA), [Foldmason](https://github.com/steinegger-lab/foldmason)
+
+We align the hit sequences using three complementary methods.
+
+## 7a: MAFFT (amino acid alignment)
+
+### Check
+
+```{bash}
+#| label: check-mafft
+
+mafft --version 2>&1
+```
+
+### Run
+
+```{bash}
+#| label: run-mafft
+
+mafft --auto --thread 4 05_hit_fasta/hits.faa \
+  > 07_alignments/hits_mafft_aa.fasta
+
+echo "=== MAFFT alignment ==="
+grep -c ">" 07_alignments/hits_mafft_aa.fasta
+echo "sequences aligned"
+grep -v ">" 07_alignments/hits_mafft_aa.fasta | head -2
+```
+
+## 7b: FAMSA with 3Di sequences
+
+### Check
+
+```{bash}
+#| label: check-famsa
+
+famsa --version 2>&1 | head -2
+```
+
+### Run
+
+> **Note:** In the full pipeline you would align 3Di sequences for all hits.
+> Here we use only the MotA 3Di sequence as a single-sequence demonstration,
+> since our *E. coli* example has few hits. With more taxa, pass a multi-FASTA
+> 3Di file instead.
+
+```{bash}
+#| label: run-famsa
+
+famsa \
+  -t 4 \
+  06_3di/motA_3di.fasta \
+  07_alignments/hits_famsa_3di.fasta
+
+echo "=== FAMSA 3Di alignment ==="
+cat 07_alignments/hits_famsa_3di.fasta
+```
+
+## 7c: Foldmason (structure-guided alignment)
+
+### Check
+
+```{bash}
+#| label: check-foldmason
+
+foldmason version 2>&1 | head -2
+```
+
+### Run
+
+```{bash}
+#| label: run-foldmason
+
+foldmason easy-msa \
+  01_input/ \
+  07_alignments/hits_foldmason \
+  07_alignments/foldmason_tmp \
+  --report-mode 1
+
+echo "=== Foldmason output files ==="
+ls 07_alignments/ | grep foldmason
+```
+
+## Alignment summary in R
+
+```{r}
+#| label: alignment-summary
+
+library(Biostrings)
+
+aln_mafft <- readAAStringSet("07_alignments/hits_mafft_aa.fasta")
+
+cat("MAFFT AA alignment\n")
+cat("  Sequences:       ", length(aln_mafft), "\n")
+cat("  Alignment width: ", unique(width(aln_mafft)), "columns\n")
+
+gap_freq <- colMeans(as.matrix(aln_mafft) == "-")
+cat("  Mean gap freq:   ", round(mean(gap_freq), 3), "\n")
+```
+
+## Gap profile plot
+
+```{r}
+#| label: gap-plot
+#| fig-width: 10
+#| fig-height: 3
+
+tibble(position = seq_along(gap_freq), gap_freq = gap_freq) |>
+  ggplot(aes(x = position, y = gap_freq)) +
+  geom_area(fill = "steelblue", alpha = 0.7) +
+  labs(
+    title = "Gap frequency across MAFFT AA alignment",
+    x     = "Alignment position",
+    y     = "Proportion of gaps"
+  ) +
+  theme_minimal()
+```
+
+---
+
+# Step 08 — Phylogenetic Inference with IQ-TREE 2
+
+**Folder:** `08_trees/`  
+**Tool:** [IQ-TREE 2](http://www.iqtree.org/)
+
+IQ-TREE 2 infers maximum-likelihood phylogenetic trees. We run three
+analyses: AA-only, 3Di-only, and a partitioned AA+3Di dataset.
+
+## Check: confirm IQ-TREE 2 is installed
+
+```{bash}
+#| label: check-iqtree
+
+iqtree2 --version 2>&1 | head -3
+```
+
+## Run: AA-only tree
+
+```{bash}
+#| label: iqtree-aa
+
+iqtree2 \
+  -s 07_alignments/hits_mafft_aa.fasta \
+  --prefix 08_trees/tree_aa \
+  -m TEST \
+  -B 1000 \
+  -T AUTO \
+  --redo 2>&1 | tail -5
+
+echo "=== Output files ==="
+ls 08_trees/tree_aa.*
+```
+
+## Run: 3Di-only tree
+
+```{bash}
+#| label: iqtree-3di
+
+iqtree2 \
+  -s 07_alignments/hits_famsa_3di.fasta \
+  --prefix 08_trees/tree_3di \
+  -m TEST \
+  -B 1000 \
+  -T AUTO \
+  --redo 2>&1 | tail -5
+
+echo "=== Output files ==="
+ls 08_trees/tree_3di.*
+```
+
+## Run: partitioned AA + 3Di tree
+
+```{bash}
+#| label: iqtree-partition
+
+cat > 08_trees/partition.nex << 'EOF'
+#nexus
+begin sets;
+  charset AA  = 07_alignments/hits_mafft_aa.fasta: *;
+  charset 3Di = 07_alignments/hits_famsa_3di.fasta: *;
+end;
+EOF
+
+iqtree2 \
+  -p 08_trees/partition.nex \
+  --prefix 08_trees/tree_partitioned \
+  -B 1000 \
+  -T AUTO \
+  --redo 2>&1 | tail -5
+
+echo "=== Output files ==="
+ls 08_trees/tree_partitioned.*
+```
+
+---
+
+# Step 09 — Tree Visualization in R
+
+**Folder:** `09_visualization/`  
+**Tools:** R (`ggtree`, `ape`), FigTree
+
+## Check: confirm ggtree is available
+
+```{r}
+#| label: check-ggtree
+
+packageVersion("ggtree")
+packageVersion("ape")
+```
+
+## Run: plot the AA tree
+
+```{r}
+#| label: plot-aa-tree
+#| fig-width: 10
+#| fig-height: 6
+
+library(ape)
+library(ggtree)
+
+tree_aa <- read.tree("08_trees/tree_aa.treefile")
+
+ggtree(tree_aa) +
+  geom_tiplab(size = 3.5, offset = 0.01) +
+  geom_nodelab(
+    aes(label = ifelse(as.numeric(label) >= 70, label, "")),
+    size  = 2.5,
+    color = "firebrick",
+    hjust = 1.2
+  ) +
+  labs(title = "AA tree — MAFFT + IQ-TREE 2") +
+  theme_tree2() +
+  xlim(0, max(node.depth.edgelength(tree_aa)) * 1.3)
+```
+
+## Run: plot the 3Di tree
+
+```{r}
+#| label: plot-3di-tree
+#| fig-width: 10
+#| fig-height: 6
+
+tree_3di <- read.tree("08_trees/tree_3di.treefile")
+
+ggtree(tree_3di) +
+  geom_tiplab(size = 3.5, offset = 0.01) +
+  geom_nodelab(
+    aes(label = ifelse(as.numeric(label) >= 70, label, "")),
+    size  = 2.5,
+    color = "steelblue",
+    hjust = 1.2
+  ) +
+  labs(title = "3Di tree — FAMSA + IQ-TREE 2") +
+  theme_tree2() +
+  xlim(0, max(node.depth.edgelength(tree_3di)) * 1.3)
+```
+
+> **Interactive exploration:** Open the `.treefile` outputs in **FigTree** for
+> interactive re-rooting, colouring, and annotation.  
+> Launch FigTree and use *File → Open* to load `08_trees/tree_aa.treefile`.
+
+---
+
+# Step 10 — Tree Distance Statistics
+
+**Folder:** `10_tree_distances/`  
+**Tool:** R (`TreeDist`, `ape`)
+
+When two proteins are hypothesized to share vertical (co-speciating)
+evolutionary history, their gene trees should be congruent. We quantify tree
+similarity using several distance metrics.
+
+## Check: confirm TreeDist is available
+
+```{r}
+#| label: check-treedist
+
+packageVersion("TreeDist")
+```
+
+## Run: calculate tree distances
+
+```{r}
+#| label: tree-distances
+
+library(TreeDist)
+library(ape)
+
+tree_aa  <- read.tree("08_trees/tree_aa.treefile")
+tree_3di <- read.tree("08_trees/tree_3di.treefile")
+
+# Subset to shared tip labels
+shared <- intersect(tree_aa$tip.label, tree_3di$tip.label)
+cat("Shared tips:", length(shared), "\n\n")
+
+t1 <- keep.tip(tree_aa,  shared)
+t2 <- keep.tip(tree_3di, shared)
+
+distances <- tibble(
+  metric = c(
+    "Robinson-Foulds distance",
+    "Clustering Info distance",
+    "Matching Split distance",
+    "Nye similarity (0-1)"
+  ),
+  value = c(
+    RobinsonFoulds(t1, t2),
+    ClusteringInfoDistance(t1, t2),
+    MatchingSplitDistance(t1, t2),
+    NyeSimilarity(t1, t2)
+  )
+)
+
+print(distances)
+```
+
+## Interpreting the metrics
+
+| Metric | Range | Identical trees | Completely different |
+|---|---|---|---|
+| Robinson-Foulds | 0 – 2(n-3) | 0 | maximum |
+| Clustering Info | 0 – ... | 0 | large |
+| Matching Split | 0 – ... | 0 | large |
+| Nye similarity | 0 – 1 | 1 | 0 |
+
+A low Robinson-Foulds distance combined with a high Nye similarity suggests
+the two trees (and therefore the two proteins) share the same evolutionary
+history — consistent with vertical inheritance.
+
+---
+
+# Session Info
+
+```{r}
+#| label: session-info
+sessionInfo()
+```

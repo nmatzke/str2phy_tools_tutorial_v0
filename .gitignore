@@ -1,23 +1,20 @@
-# Keep results folder but ignore generated files
-results/*
-!results/.gitkeep
-
-# R
-.Rhistory
-.RData
-.Rproj.user/
-renv/library/
-
 # Quarto rendered output
 /_site/
 /.quarto/
 *_files/
 *.html
-
-# Large data files
+ 
+# R
+.Rhistory
+.RData
+.Rproj.user/
+renv/library/
+ 
+# Large sequence/structure files (comment out if you want to commit example data)
 *.fastq
 *.fastq.gz
-*.fq.gz
 *.bam
 *.bai
-*.pdb
+ 
+# Foldseek tmp folders
+*/tmp/
