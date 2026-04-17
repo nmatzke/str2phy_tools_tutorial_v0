@@ -3,7 +3,7 @@
 # Terminal in the root of the particular GitHub archive:
 # find . -name .DS_Store -print0 | xargs -0 git rm -f --ignore-unmatch
 #
-# 
+#
 # open .gitignore
 **/.DS_Store
 
@@ -12,18 +12,20 @@
 /.quarto/
 *_files/
 *.html
- 
+
 # R
 .Rhistory
 .RData
 .Rproj.user/
 renv/library/
- 
+
 # Large sequence/structure files (comment out if you want to commit example data)
 *.fastq
 *.fastq.gz
 *.bam
 *.bai
- 
+
 # Foldseek tmp folders
 */tmp/
+
+**/*.quarto_ipynb

@@ -15,3 +15,4 @@ execute:
   echo: true
   warning: false
   message: false
+  cwd: "~/GitHub/str2phy_tools_tutorial_v0" # set the working directory to the root of the project

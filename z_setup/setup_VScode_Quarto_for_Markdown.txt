@@ -1,0 +1,43 @@
+#######################################################
+# Setting up VS code with Quarto for editing Markdown files
+#######################################################
+
+# Install from online:
+# VS Code
+# Quarto
+# Claude AI
+# brew install jupyter (or similar python install, 
+#                       eg python3 pip install jupyter)
+
+# Symbolic link "code" command-line command to run VS Code:
+sudo ln -s "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" /usr/local/bin/code
+
+code --install-extension quarto.quarto \
+     --install-extension REditorSupport.r \
+     --install-extension RDebugger.r-debugger \
+     --install-extension mads-hartmann.bash-ide-vscode \
+     --install-extension timonwong.shellcheck \
+     --install-extension mechatroner.rainbow-csv \
+     --install-extension GrapeCity.gc-excelviewer \
+     --install-extension christian-kohler.path-intellisense \
+     --install-extension oderwat.indent-rainbow \
+     --install-extension eamodio.gitlens
+
+# Install extension to Claude AI
+code --install-extension anthropic.claude-code
+
+
+Rcode='
+install.packages("languageserver")
+library(languageserver)
+
+'
+
+
+
+
+
+# Checks:
+# Command line:
+code --version   # VS code
+quarto --version # Quarto

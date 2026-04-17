@@ -72,9 +72,9 @@ sure everything is in order before we start.
 
 ```{bash}
 # First, change directory (this assumes you have cloned the GitHub repository, and have a shortcut
-# so that ~/GitHub/ gets to the GitHub folder on your system)
 cd ~/GitHub/str2phy_tools_tutorial_v0
 
+# so that ~/GitHub/ gets to the GitHub folder on your system)
 #| label: check-genome
 
 echo "\n\n=== Genome file (first 5 lines) ==="
@@ -139,13 +139,15 @@ parsing — confirm which tool you have available:
 ```{bash}
 #| label: check-any2fasta
 
-any2fasta --version 2>&1 || echo "any2fasta not found — see note below"
+any2fasta -v 2>&1 || echo "any2fasta not found — see note below"
 ```
 
-> **Note:** If `any2fasta` is not installed, install it with:
+> **Note:** If `any2fasta` is not installed, install it with e.g.:
 > `conda install -c bioconda any2fasta` or `brew install any2fasta`
 
 ```{bash}
+cd ~/GitHub/str2phy_tools_tutorial_v0
+
 #| label: extract-proteins
 
 any2fasta 01_input/ecoli_k12.gbk > 02_genome_proteins/ecoli_k12_proteins.faa
@@ -161,6 +163,8 @@ grep ">" 02_genome_proteins/ecoli_k12_proteins.faa | head -3
 ## Check: verify MotA is present in the extracted proteins
 
 ```{r}
+setwd("~/GitHub/str2phy_tools_tutorial_v0")
+
 #| label: verify-motA-present
 
 proteins <- readAAStringSet("02_genome_proteins/ecoli_k12_proteins.faa")
