@@ -12,6 +12,7 @@
 # Symbolic link "code" command-line command to run VS Code:
 sudo ln -s "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" /usr/local/bin/code
 
+# Install extensions for quarto for writing Markdown (scripts plus notes)
 code --install-extension quarto.quarto \
      --install-extension REditorSupport.r \
      --install-extension RDebugger.r-debugger \
@@ -35,9 +36,13 @@ library(languageserver)
 
 
 
-
-
-# Checks:
+# Checks that it's working:
 # Command line:
 code --version   # VS code
 quarto --version # Quarto
+
+
+Note university AI policies:
+https://www.auckland.ac.nz/en/intranet/services/other-services/ai-university/getting-started-ai.html
+
+
