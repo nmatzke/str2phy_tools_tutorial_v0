@@ -1,0 +1,13 @@
+#                                                               --- full sequence ---- --- best 1 domain ---- --- domain number estimation ----
+# target name        accession  query name           accession    E-value  score  bias   E-value  score  bias   exp reg clu  ov env dom rep inc description of target
+#------------------- ---------- -------------------- ---------- --------- ------ ----- --------- ------ -----   --- --- --- --- --- --- --- --- ---------------------
+#
+# Program:         hmmsearch
+# Version:         3.2.1 (June 2018)
+# Pipeline mode:   SEARCH
+# Query file:      03_hmmer/motA.hmm
+# Target file:     02_genome_proteins/ecoli_k12_proteins.faa
+# Option settings: hmmsearch --tblout 03_hmmer/hits.tbl -E 1e-5 --cpu 4 03_hmmer/motA.hmm 02_genome_proteins/ecoli_k12_proteins.faa 
+# Current dir:     /Users/nickm/GitHub/str2phy_tools_tutorial_v0
+# Date:            Fri Apr 17 15:48:28 2026
+# [ok]

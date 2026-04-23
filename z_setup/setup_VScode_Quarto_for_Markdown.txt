@@ -30,7 +30,6 @@ code --install-extension anthropic.claude-code
 Rcode='
 install.packages("languageserver")
 library(languageserver)
-
 '
 
 
@@ -41,3 +40,8 @@ library(languageserver)
 # Command line:
 code --version   # VS code
 quarto --version # Quarto
+
+
+jupyter --version
+# or
+python -c "import jupyter; print('Installed')"
