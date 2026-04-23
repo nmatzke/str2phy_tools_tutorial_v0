@@ -1,0 +1,53 @@
+#######################################################
+# Setting up VS code with Quarto for editing Markdown files
+#######################################################
+
+# Install from online:
+# VS Code
+# Quarto
+# Claude AI
+# brew install jupyter (or similar python install, 
+#                       eg python3 pip install jupyter)
+
+# Symbolic link "code" command-line command to run VS Code:
+sudo ln -s "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" /usr/local/bin/code
+
+# Install extensions for quarto for writing Markdown (scripts plus notes)
+code --install-extension quarto.quarto \
+     --install-extension REditorSupport.r \
+     --install-extension RDebugger.r-debugger \
+     --install-extension mads-hartmann.bash-ide-vscode \
+     --install-extension timonwong.shellcheck \
+     --install-extension mechatroner.rainbow-csv \
+     --install-extension GrapeCity.gc-excelviewer \
+     --install-extension christian-kohler.path-intellisense \
+     --install-extension oderwat.indent-rainbow \
+     --install-extension eamodio.gitlens
+
+# Install extension to Claude AI
+code --install-extension anthropic.claude-code
+
+
+Rcode='
+install.packages("languageserver")
+library(languageserver)
+'
+
+
+
+# Checks that it's working:
+# Command line:
+code --version   # VS code
+quarto --version # Quarto
+
+
+<<<<<<< HEAD
+jupyter --version
+# or
+python -c "import jupyter; print('Installed')"
+=======
+Note university AI policies:
+https://www.auckland.ac.nz/en/intranet/services/other-services/ai-university/getting-started-ai.html
+
+
+>>>>>>> 777d9eb5e704e2b913d47b8b9c39c4fd0ae9e2b9
