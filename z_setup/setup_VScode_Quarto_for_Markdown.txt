@@ -42,7 +42,7 @@ code --version   # VS code
 quarto --version # Quarto
 
 
-Note university AI policies:
-https://www.auckland.ac.nz/en/intranet/services/other-services/ai-university/getting-started-ai.html
+# Note university AI policies and tools/subscriptions:
+# https://www.auckland.ac.nz/en/intranet/services/other-services/ai-university/getting-started-ai.html
 
 
