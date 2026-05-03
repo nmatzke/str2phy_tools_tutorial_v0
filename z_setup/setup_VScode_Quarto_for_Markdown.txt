@@ -39,7 +39,7 @@ library(languageserver)
 # Checks that it's working:
 # Command line:
 code --version   # VS code
-quarto --version # Quarto
+#quarto --version # Quarto
 
 
 # Note university AI policies and tools/subscriptions:
